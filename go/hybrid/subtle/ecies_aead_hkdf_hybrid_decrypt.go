@@ -16,6 +16,7 @@ package subtle
 
 import (
 	"errors"
+	"io"
 )
 
 // ECIESAEADHKDFHybridDecrypt is an instance of ECIES decryption with HKDF-KEM (key encapsulation mechanism)
@@ -66,4 +67,29 @@ func (e *ECIESAEADHKDFHybridDecrypt) Decrypt(ciphertext, contextInfo []byte) ([]
 		return nil, err
 	}
 	return aead.Decrypt(ct, []byte{})
+}
+
+func (e *ECIESAEADHKDFHybridDecrypt) NewDecryptingReader(r io.Reader, contextInfo []byte) (io.Reader, error) {
+	curve := e.privateKey.PublicKey.Curve
+	headerSize, err := encodingSizeInBytes(curve, e.pointFormat)
+	if err != nil {
+		return nil, err
+	}
+
+	var kemBytes = make([]byte, headerSize)
+	if _, err := io.ReadFull(r, kemBytes); err != nil {
+		return nil, err
+	}
+	rKem := &ECIESHKDFRecipientKem{
+		recipientPrivateKey: e.privateKey,
+	}
+	symmetricKey, err := rKem.decapsulate(kemBytes, e.hkdfHMACAlgo, e.hkdfSalt, contextInfo, e.demHelper.GetSymmetricKeySize(), e.pointFormat)
+	if err != nil {
+		return nil, err
+	}
+	saead, err := e.demHelper.GetStreamingAEAD(symmetricKey)
+	if err != nil {
+		return nil, err
+	}
+	return saead.NewDecryptingReader(r, nil)
 }

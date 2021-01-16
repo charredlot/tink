@@ -20,6 +20,7 @@ import (
 	commonpb "github.com/google/tink/go/proto/common_go_proto"
 	eciespb "github.com/google/tink/go/proto/ecies_aead_hkdf_go_proto"
 	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
+	"github.com/google/tink/go/streamingaead"
 )
 
 // This file contains pre-generated KeyTemplates for HybridEncrypt keys. One can use these templates
@@ -32,6 +33,11 @@ import (
 func ECIESHKDFAES128GCMKeyTemplate() *tinkpb.KeyTemplate {
 	empty := []byte{}
 	return createECIESAEADHKDFKeyTemplate(commonpb.EllipticCurveType_NIST_P256, commonpb.HashType_SHA256, commonpb.EcPointFormat_UNCOMPRESSED, aead.AES128GCMKeyTemplate(), empty)
+}
+
+func ECIESHKDFAES128GCMSegment1MBKeyTemplate() *tinkpb.KeyTemplate {
+	empty := []byte{}
+	return createECIESAEADHKDFKeyTemplate(commonpb.EllipticCurveType_NIST_P256, commonpb.HashType_SHA256, commonpb.EcPointFormat_UNCOMPRESSED, streamingaead.AES128GCMHKDF1MBKeyTemplate(), empty)
 }
 
 // ECIESHKDFAES128CTRHMACSHA256KeyTemplate is a KeyTemplate that generates an ECDH P-256 and decapsulation key AES128-CTR-HMAC-SHA256 with the following parameters:

@@ -16,6 +16,7 @@ package hybrid
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/google/tink/go/core/cryptofmt"
 	"github.com/google/tink/go/core/primitiveset"
@@ -109,4 +110,54 @@ func (a *wrappedHybridDecrypt) Decrypt(ct, ad []byte) ([]byte, error) {
 
 	// nothing worked
 	return nil, fmt.Errorf("hybrid_factory: decryption failed")
+}
+
+type StreamingHybridDecrypt interface {
+	NewDecryptingReader(r io.Reader, contextInfo []byte) (io.Reader, error)
+}
+
+func NewStreamingHybridDecrypt(h *keyset.Handle) (StreamingHybridDecrypt, error) {
+	return NewStreamingHybridDecryptWithKeyManager(h, nil /*keyManager*/)
+}
+
+func NewStreamingHybridDecryptWithKeyManager(h *keyset.Handle, km registry.KeyManager) (StreamingHybridDecrypt, error) {
+	ps, err := h.PrimitivesWithKeyManager(km)
+	if err != nil {
+		return nil, fmt.Errorf("hybrid_factory: cannot obtain primitive set: %s", err)
+	}
+
+	return newStreamingHybridDecryptPrimitiveSet(ps)
+}
+
+type wrappedStreamingHybridDecrypt struct {
+	ps *primitiveset.PrimitiveSet
+}
+
+func newStreamingHybridDecryptPrimitiveSet(ps *primitiveset.PrimitiveSet) (*wrappedStreamingHybridDecrypt, error) {
+	if _, ok := (ps.Primary.Primitive).(StreamingHybridDecrypt); !ok {
+		return nil, fmt.Errorf("hybrid_factory: primary %T is not a StreamingHybridDecrypt primitive", ps.Primary.Primitive)
+	}
+
+	for _, primitives := range ps.Entries {
+		for _, p := range primitives {
+			if _, ok := (p.Primitive).(StreamingHybridDecrypt); !ok {
+				return nil, fmt.Errorf("hybrid_factory: entry %T is not a StreamingHybridDecrypt primitive", p.Primitive)
+			}
+		}
+	}
+
+	ret := new(wrappedStreamingHybridDecrypt)
+	ret.ps = ps
+
+	return ret, nil
+}
+
+func (wshd *wrappedStreamingHybridDecrypt) NewDecryptingReader(w io.Reader, contextInfo []byte) (io.Reader, error) {
+	primary := wshd.ps.Primary
+	p, ok := (primary.Primitive).(StreamingHybridDecrypt)
+	if !ok {
+		return nil, fmt.Errorf("streaminghybrid_factory.go: %T is not a StreamingHybridDecrypt primitive", primary.Primitive)
+	}
+
+	return p.NewDecryptingReader(w, contextInfo)
 }

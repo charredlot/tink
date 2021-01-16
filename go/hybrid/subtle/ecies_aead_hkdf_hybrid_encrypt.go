@@ -16,6 +16,7 @@ package subtle
 
 import (
 	"bytes"
+	"io"
 )
 
 // ECIESAEADHKDFHybridEncrypt is an instance of ECIES encryption with HKDF-KEM (key encapsulation mechanism)
@@ -68,4 +69,22 @@ func (e *ECIESAEADHKDFHybridEncrypt) Encrypt(plaintext, contextInfo []byte) ([]b
 	b.Write(kemKey.Kem)
 	b.Write(ct)
 	return b.Bytes(), nil
+}
+
+func (e *ECIESAEADHKDFHybridEncrypt) NewEncryptingWriter(w io.Writer, contextInfo []byte) (io.WriteCloser, error) {
+	sKem := &ECIESHKDFSenderKem{
+		recipientPublicKey: e.publicKey,
+	}
+	kemKey, err := sKem.encapsulate(e.hkdfHMACAlgo, e.hkdfSalt, contextInfo, e.demHelper.GetSymmetricKeySize(), e.pointFormat)
+	if err != nil {
+		return nil, err
+	}
+	saead, err := e.demHelper.GetStreamingAEAD(kemKey.SymmetricKey)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(kemKey.Kem); err != nil {
+		return nil, err
+	}
+	return saead.NewEncryptingWriter(w, nil)
 }

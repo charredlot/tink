@@ -22,15 +22,16 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/google/tink/go/core/registry"
 	"github.com/google/tink/go/hybrid/subtle"
-	"github.com/google/tink/go/tink"
 	ctrhmacpb "github.com/google/tink/go/proto/aes_ctr_hmac_aead_go_proto"
 	gcmpb "github.com/google/tink/go/proto/aes_gcm_go_proto"
 	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
+	"github.com/google/tink/go/tink"
 )
 
 const (
 	aesGCMTypeURL         = "type.googleapis.com/google.crypto.tink.AesGcmKey"
 	aesCTRHMACAEADTypeURL = "type.googleapis.com/google.crypto.tink.AesCtrHmacAeadKey"
+	aesGCMHKDFTypeURL     = "type.googleapis.com/google.crypto.tink.AesGcmHkdfStreamingKey" // FIXME: better place to get this from?
 )
 
 // registerECIESAEADHKDFDemHelper registers a DEM helper.
@@ -51,7 +52,7 @@ func newRegisterECIESAEADHKDFDemHelper(k *tinkpb.KeyTemplate) (*registerECIESAEA
 	var err error
 	u := k.TypeUrl
 
-	if strings.Compare(u, aesGCMTypeURL) == 0 {
+	if strings.Compare(u, aesGCMHKDFTypeURL) == 0 || strings.Compare(u, aesGCMTypeURL) == 0 {
 		gcmKeyFormat := new(gcmpb.AesGcmKeyFormat)
 		if err := proto.Unmarshal(k.Value, gcmKeyFormat); err != nil {
 			return nil, err
@@ -146,5 +147,35 @@ func (r *registerECIESAEADHKDFDemHelper) GetAEAD(symmetricKeyValue []byte) (tink
 		return nil, err
 	}
 	g := p.(tink.AEAD)
+	return g, nil
+}
+
+// GetStreamingAEAD returns the StreamingAEAD primitive from the DEM
+func (r *registerECIESAEADHKDFDemHelper) GetStreamingAEAD(symmetricKeyValue []byte) (tink.StreamingAEAD, error) {
+	var sk []byte
+	var pErr error
+	if uint32(len(symmetricKeyValue)) != r.GetSymmetricKeySize() {
+		return nil, errors.New("symmetric key has incorrect length")
+	}
+	if strings.Compare(r.demKeyURL, aesGCMHKDFTypeURL) == 0 {
+		gcmKey := new(gcmpb.AesGcmKey)
+		if err := proto.Unmarshal(r.keyData, gcmKey); err != nil {
+			return nil, err
+		}
+		gcmKey.KeyValue = symmetricKeyValue
+		sk, pErr = proto.Marshal(gcmKey)
+		if pErr != nil {
+			return nil, fmt.Errorf("failed to serialize key, error: %v", pErr)
+		}
+
+	} else {
+		return nil, fmt.Errorf("unsupported StreamingAEAD DEM key type: %s", r.demKeyURL)
+	}
+	p, err := registry.Primitive(r.demKeyURL, sk)
+	if err != nil {
+		return nil, err
+	}
+
+	g := p.(tink.StreamingAEAD)
 	return g, nil
 }

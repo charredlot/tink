@@ -24,4 +24,6 @@ type EciesAEADHKDFDEMHelper interface {
 
 	// GetAEAD returns the newly created AEAD primitive.
 	GetAEAD(symmetricKeyValue []byte) (tink.AEAD, error)
+
+	GetStreamingAEAD(symmetricKeyValue []byte) (tink.StreamingAEAD, error)
 }

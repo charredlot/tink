@@ -16,6 +16,7 @@ package hybrid
 
 import (
 	"fmt"
+    "io"
 
 	"github.com/google/tink/go/core/primitiveset"
 	"github.com/google/tink/go/core/registry"
@@ -77,4 +78,54 @@ func (a *wrappedHybridEncrypt) Encrypt(pt, ad []byte) ([]byte, error) {
 		return nil, err
 	}
 	return append([]byte(primary.Prefix), ct...), nil
+}
+
+type StreamingHybridEncrypt interface {
+	NewEncryptingWriter(w io.Writer, contextInfo []byte) (io.WriteCloser, error)
+}
+
+func NewStreamingHybridEncrypt(h *keyset.Handle) (StreamingHybridEncrypt, error) {
+	return NewStreamingHybridEncryptWithKeyManager(h, nil /*keyManager*/)
+}
+
+func NewStreamingHybridEncryptWithKeyManager(h *keyset.Handle, km registry.KeyManager) (StreamingHybridEncrypt, error) {
+	ps, err := h.PrimitivesWithKeyManager(km)
+	if err != nil {
+		return nil, fmt.Errorf("hybrid_factory: cannot obtain primitive set: %s", err)
+	}
+
+	return newStreamingHybridEncryptPrimitiveSet(ps)
+}
+
+type wrappedStreamingHybridEncrypt struct {
+	ps *primitiveset.PrimitiveSet
+}
+
+func newStreamingHybridEncryptPrimitiveSet(ps *primitiveset.PrimitiveSet) (*wrappedStreamingHybridEncrypt, error) {
+	if _, ok := (ps.Primary.Primitive).(StreamingHybridEncrypt); !ok {
+		return nil, fmt.Errorf("hybrid_factory: primary %T is not a StreamingHybridEncrypt primitive", ps.Primary.Primitive)
+	}
+
+	for _, primitives := range ps.Entries {
+		for _, p := range primitives {
+			if _, ok := (p.Primitive).(StreamingHybridEncrypt); !ok {
+				return nil, fmt.Errorf("hybrid_factory: entry %T is not a StreamingHybridEncrypt primitive", p.Primitive)
+			}
+		}
+	}
+
+	ret := new(wrappedStreamingHybridEncrypt)
+	ret.ps = ps
+
+	return ret, nil
+}
+
+func (wshe *wrappedStreamingHybridEncrypt) NewEncryptingWriter(w io.Writer, contextInfo []byte) (io.WriteCloser, error) {
+	primary := wshe.ps.Primary
+	p, ok := (primary.Primitive).(StreamingHybridEncrypt)
+	if !ok {
+		return nil, fmt.Errorf("streaminghybrid_factory.go: %T is not a StreamingHybridEncrypt primitive", primary.Primitive)
+	}
+
+	return p.NewEncryptingWriter(w, contextInfo)
 }
